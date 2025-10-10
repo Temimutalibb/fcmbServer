@@ -1,2 +1,6 @@
 # Dependencies
 node_modules/
+
+# Firebase service account key
+# IMPORTANT: This file contains sensitive credentials. Do not commit to version control.
+firebase-key.json

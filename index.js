@@ -8,18 +8,36 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+admin.initializeApp({});
 
-admin.initializeApp({
+// Middleware to verify Firebase ID token
+const verifyFirebaseToken = async (req, res, next) => {
+  const authorizationHeader = req.headers.authorization;
 
-});
+  if (!authorizationHeader || !authorizationHeader.startsWith('Bearer ')) {
+    return res.status(403).send('Unauthorized: No token provided.');
+  }
+
+  const idToken = authorizationHeader.split('Bearer ')[1];
+
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    req.user = decodedToken; // Add user info to the request object
+    next(); // Proceed to the next middleware/route handler
+  } catch (error) {
+    console.error('Error while verifying Firebase ID token:', error);
+    res.status(403).send('Unauthorized: Invalid token.');
+  }
+};
+
 
 // Test route
 app.get("/", (req, res) => {
   res.send("🚀 FCM Notification Server is up!");
 });
 
-// Route to send notification
-app.post("/send-notification", async (req, res) => {
+// Route to send notification - now protected by middleware
+app.post("/send-notification", verifyFirebaseToken, async (req, res) => {
 
   const { token, title, body, data } = req.body;
 
@@ -62,11 +80,13 @@ app.post("/send-notification", async (req, res) => {
     if (response.failureCount > 0) {
       response.responses.forEach((resp, idx) => {
         if (!resp.success) {
-          failedTokens.push(recipientTokens[idx]);
+          const failedToken = recipientTokens[idx];
+          failedTokens.push(failedToken);
           console.error(
-            `Failed to send to token: ${recipientTokens[idx]}`,
+            `Failed to send to token: ${failedToken}`,
             resp.error
           );
+
         }
       });
     }
@@ -74,7 +94,6 @@ app.post("/send-notification", async (req, res) => {
     console.log(`${response.successCount} messages were sent successfully.`);
     if (failedTokens.length > 0) {
       console.log(`Failed to send to ${failedTokens.length} tokens.`);
-      // Here you should implement logic to remove the failedTokens from your database.
     }
 
     res.status(200).send({ success: true, successCount: response.successCount, failureCount: response.failureCount, failedTokens });
@@ -84,5 +103,5 @@ app.post("/send-notification", async (req, res) => {
   }
 });
 
-// Explicitly register the Express app as an HTTP function for Google Cloud Functions.
+
 functions.http("fcmServer", app);
