@@ -8,45 +8,27 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-admin.initializeApp({});
-
-// Middleware to verify Firebase ID token
-const verifyFirebaseToken = async (req, res, next) => {
-  const authorizationHeader = req.headers.authorization;
-
-  if (!authorizationHeader || !authorizationHeader.startsWith('Bearer ')) {
-    return res.status(403).send('Unauthorized: No token provided.');
-  }
-
-  const idToken = authorizationHeader.split('Bearer ')[1];
-
-  try {
-    const decodedToken = await admin.auth().verifyIdToken(idToken);
-    req.user = decodedToken; // Add user info to the request object
-    next(); // Proceed to the next middleware/route handler
-  } catch (error) {
-    console.error('Error while verifying Firebase ID token:', error);
-    res.status(403).send('Unauthorized: Invalid token.');
-  }
-};
-
+// Initialize Firebase Admin. In a Google Cloud environment like Cloud Functions,
+// it automatically finds the project's service account credentials.
+admin.initializeApp();
 
 // Test route
 app.get("/", (req, res) => {
   res.send("🚀 FCM Notification Server is up!");
 });
 
-// Route to send notification - now protected by middleware
-app.post("/send-notification", verifyFirebaseToken, async (req, res) => {
-
+// Route to send notification
+app.post("/send-notification", async (req, res) => {
   const { token, title, body, data } = req.body;
 
+  // Ensure token is an array for multicast messaging.
   const recipientTokens = Array.isArray(token) ? token : [token];
 
   if (!recipientTokens || recipientTokens.length === 0 || !recipientTokens[0]) {
     return res.status(400).send({ error: "Missing push token(s)" });
   }
 
+  // FCM data payload values must be strings.
   const stringifiedData = {};
   if (data) {
     for (const key in data) {
@@ -86,7 +68,6 @@ app.post("/send-notification", verifyFirebaseToken, async (req, res) => {
             `Failed to send to token: ${failedToken}`,
             resp.error
           );
-
         }
       });
     }
@@ -103,5 +84,5 @@ app.post("/send-notification", verifyFirebaseToken, async (req, res) => {
   }
 });
 
-
+// Export the Express app as an HTTP function
 functions.http("fcmServer", app);
