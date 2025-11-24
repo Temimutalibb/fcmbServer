@@ -1,88 +1,17 @@
 const functions = require("@google-cloud/functions-framework");
-const express = require("express");
-const cors = require("cors");
-const admin = require("firebase-admin");
 
-const app = express();
+// HTTP notification
+const notificationApp = require("./notification");
+functions.http("fcmServer", notificationApp);
 
-app.use(cors());
-app.use(express.json());
+// Storage trigger
+const { generateThumbnail } = require("./generateThumbnail");
+functions.cloudEvent("generateThumbnail", generateThumbnail);
 
-// Initialize Firebase Admin. In a Google Cloud environment like Cloud Functions,
-// it automatically finds the project's service account credentials.
-admin.initializeApp();
+// Scheduled cleanup
+const { cleanExpiredProducts } = require("./cleanExpiredProducts");
+functions.cloudEvent("cleanExpiredProducts", cleanExpiredProducts);
 
-// Test route
-app.get("/", (req, res) => {
-  res.send("🚀 FCM Notification Server is up!");
-});
-
-// Route to send notification
-app.post("/send-notification", async (req, res) => {
-  const { token, title, body, data } = req.body;
-
-  // Ensure token is an array for multicast messaging.
-  const recipientTokens = Array.isArray(token) ? token : [token];
-
-  if (!recipientTokens || recipientTokens.length === 0 || !recipientTokens[0]) {
-    return res.status(400).send({ error: "Missing push token(s)" });
-  }
-
-  // FCM data payload values must be strings.
-  const stringifiedData = {};
-  if (data) {
-    for (const key in data) {
-      if (Object.prototype.hasOwnProperty.call(data, key)) {
-        stringifiedData[key] = String(data[key]);
-      }
-    }
-  }
-
-  const message = {
-    notification: {
-      title: title,
-      body: body,
-    },
-    data: stringifiedData,
-    android: { priority: "high" },
-    apns: {
-      payload: { aps: { "content-available": 1 } },
-      headers: { "apns-priority": "10" },
-    },
-  };
-
-  try {
-    // Use sendEachForMulticast for multiple tokens. It's efficient.
-    const response = await admin.messaging().sendEachForMulticast({
-      ...message,
-      tokens: recipientTokens,
-    });
-
-    const failedTokens = [];
-    if (response.failureCount > 0) {
-      response.responses.forEach((resp, idx) => {
-        if (!resp.success) {
-          const failedToken = recipientTokens[idx];
-          failedTokens.push(failedToken);
-          console.error(
-            `Failed to send to token: ${failedToken}`,
-            resp.error
-          );
-        }
-      });
-    }
-
-    console.log(`${response.successCount} messages were sent successfully.`);
-    if (failedTokens.length > 0) {
-      console.log(`Failed to send to ${failedTokens.length} tokens.`);
-    }
-
-    res.status(200).send({ success: true, successCount: response.successCount, failureCount: response.failureCount, failedTokens });
-  } catch (error) {
-    console.error("Error sending message:", error);
-    res.status(500).send({ error: "Failed to send notification" });
-  }
-});
-
-// Export the Express app as an HTTP function
-functions.http("fcmServer", app);
+// Firestore trigger
+const { deleteExpiredProduct } = require("./deleteExpiredProduct");
+functions.cloudEvent("deleteExpiredProduct", deleteExpiredProduct);
