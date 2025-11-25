@@ -2,10 +2,15 @@ const sharp = require("sharp");
 const path = require("path");
 const admin = require("firebase-admin");
 
-const bucket = admin.storage().bucket();
-const db = admin.firestore();
-
 async function generateThumbnail(event) {
+    // Ensure firebase-admin is initialized (defensive in case this module is loaded directly)
+    if (!admin.apps || admin.apps.length === 0) {
+        admin.initializeApp();
+    }
+
+    const bucket = admin.storage().bucket();
+    const db = admin.firestore();
+
     const filePath = event.data.name;
 
     if (!filePath.startsWith("products/") || !filePath.endsWith(".jpg")) return;
